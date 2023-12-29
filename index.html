@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Creamy Chat</title>
+    <meta charset="utf-8">
+    <style>
+      html, body {
+        background-color: rgb(27, 27, 27);
+        color: rgb(171, 171, 171);
+        height: 100vh;
+        padding: 0;
+        margin: 0;
+      }
+      textarea {
+        background-color: rgb(27, 27, 27);
+        color: rgb(171, 171, 171);
+        border: 1px solid rgb(171, 171, 171);
+      }
+      #view {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+      #messages {
+        flex-grow: 1;
+        overflow-y: auto;
+        height: 100%;
+        padding: 1em;
+      }
+      .message {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 500px) {
+        .message {
+          grid-gap: 1em;
+          grid-template-columns: auto minmax(auto, 1fr) 8fr;
+        }
+      }
+      .message__ts {
+        opacity: .8;
+      }
+      .message__author {
+        opacity: .8;
+        font-weight: bold;
+      }
+      .message__text {
+        white-space: pre-line;
+      }
+      #new-message-form {
+        display: grid;
+        padding: 1em;
+        grid-template-columns: 1fr 6ch;
+        grid-gap: 1em;
+      }
+      #status {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 4ch;
+        width: 4ch;
+        overflow: hidden;
+      }
+      .status.status--connected {
+        background-color: green;
+        color: green;
+      }
+      .status.status--disconnected {
+        background-color: red;
+        color: red;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="view">
+      <div id="messages">
+      </div>
+      <form id="new-message-form">
+        <textarea id="new-message-content"></textarea>
+        <button>Send</button>
+      </form>
+    </div>
+    <div id="status"></div>
+    <script>
+      const divMessages = document.getElementById('messages');
+      const formNewMessage = document.getElementById('new-message-form');
+      const txtNewMessage = document.getElementById('new-message-content');
+      const divStatus = document.getElementById('status');
+
+      const messages = [];
+      /**
+       * @param {{
+       *  id: string,
+       *  time: string,
+       *  ping?: {
+       *    present: boolean,
+       *  },
+       *  text?: {
+       *    present: boolean,
+       *    sender: string,
+       *    text: string,
+       *  },
+       * }} message
+       */
+      function messageReceived(message) {
+        if (message && message.ping && message.ping.present) {
+          updateStatus(true);
+        }
+
+        if (message && message.text && message.text.present) {
+          messages.push(message);
+
+          const divMessage = document.createElement('div');
+          divMessage.setAttribute('class', 'message');
+          divMessage.setAttribute('data-msg-id', message.id);
+
+          const divMessageTS = document.createElement('div');
+          divMessageTS.setAttribute('class', 'message__ts');
+          const longTime = (new Date(message.time)).toLocaleString();
+          const shortTime = (new Date(message.time)).toLocaleTimeString(undefined, {
+            timeStyle: 'short',
+          });
+          divMessageTS.innerText = shortTime;
+          divMessageTS.setAttribute('title', longTime);
+          divMessage.appendChild(divMessageTS);
+
+          const divMessageAuthor = document.createElement('div');
+          divMessageAuthor.setAttribute('class', 'message__author');
+          divMessageAuthor.innerText = message.text.sender;
+          divMessage.appendChild(divMessageAuthor);
+
+          const divMessageText = document.createElement('div');
+          divMessageText.setAttribute('class', 'message__text');
+          divMessageText.innerText = message.text.text;
+          divMessage.appendChild(divMessageText);
+
+          divMessages.appendChild(divMessage);
+          divMessages.scrollTop = divMessages.scrollHeight;
+        }
+      }
+      function lineReceived(line) {
+        if (line === '') {
+          return;
+        }
+        try {
+          const msg = JSON.parse(line);
+          if (!msg || !msg.id || !msg.time) {
+            throw new Error('Invalid message: ' + line);
+          }
+          messageReceived(msg);
+        } catch (ex) {
+          console.error('failed to parse line as JSON: ' + JSON.stringify({ line }));
+        }
+      }
+      function receive() {
+        const controller = new AbortController();
+        let received = false;
+        window.onbeforeunload = () => {
+          controller.abort();
+        };
+        setTimeout(() => {
+          if (!received) {
+            controller.abort('No message received in 5s');
+          }
+        }, 5000);
+        return fetch('/receive', {
+          signal: controller.signal,
+        })
+          .then((response) => {
+            const reader = response.body.getReader();
+            let accum = '';
+            return reader.read().then(function pump({ done, value }) {
+              accum += (new TextDecoder()).decode(value);
+              let index;
+              while ((index = accum.indexOf('\n')) !== -1) {
+                const msg = accum.slice(0, index);
+                accum = accum.slice(index+1);
+                lineReceived(msg);
+                received = true;
+              }
+              if (done) {
+                lineReceived(accum);
+                accum = '';
+                return;
+              }
+              return reader.read().then(pump);
+            });
+          });
+      }
+
+      function updateStatus(alive) {
+        if (alive) {
+          divStatus.innerText = 'Connected';
+          divStatus.classList.add('status', 'status--connected');
+          divStatus.classList.remove('status--disconnected');
+        } else {
+          divStatus.innerText = 'Disconnected';
+          divStatus.classList.add('status', 'status--disconnected');
+          divStatus.classList.remove('status--connected');
+        }
+      }
+      updateStatus(false);
+
+      let receiving = false;
+      async function receiveLoop() {
+        receiving = true;
+        try {
+          await receive();
+        } catch (ex) {
+          console.error('error during receive:', ex);
+        } finally {
+          receiving = false;
+          updateStatus(false);
+          setTimeout(() => receiveLoop(), 1000);
+        }
+      }
+
+      let sending = false;
+      function sendMessage() {
+        if (sending) {
+          return;
+        }
+        sending = true;
+        const text = txtNewMessage.value;
+
+        const promise = fetch('/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: text,
+          }),
+        })
+          .then((response) => {
+            if (response.status != 200) {
+              throw new Error('Unexpected response status: ' + reponse.status);
+            }
+            // successfully submitted
+            txtNewMessage.value = '';
+            return response.json();
+          })
+          .finally(() => {
+            sending = false;
+          });
+      }
+      formNewMessage.addEventListener('submit', (e) => {
+        e.preventDefault();
+        sendMessage();
+      });
+      txtNewMessage.addEventListener('keypress', function (e) {
+        // submit with enter, add newline with shift+enter
+        if (e.which === 13 && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      receiveLoop();
+    </script>
+  </body>
+</html>
