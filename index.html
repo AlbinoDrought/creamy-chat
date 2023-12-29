@@ -82,7 +82,7 @@
         word-wrap: break-word;
         word-break: break-all;
       }
-      .message__file-img {
+      .message__file-img, .message__file-video {
         display: block;
         max-width: 100%;
         max-height: 50vh;
@@ -477,11 +477,18 @@
               imgFile.setAttribute('class', 'message__file-img');
               linkFileDownload.appendChild(imgFile);
             }
+            if (existing.mimetype.startsWith('video/')) {
+              const videoFile = document.createElement('video');
+              videoFile.setAttribute('src', url);
+              videoFile.setAttribute('class', 'message__file-video');
+              videoFile.setAttribute('controls', '');
+              linkFileDownload.appendChild(videoFile);
+            }
 
             divMessage.appendChild(divMessageText);
 
             divMessages.appendChild(divMessage);
-            divMessages.scrollTop = divMessages.scrollHeight;
+            divMessages.scrollTop = divMessages.scrollHeight; // todo: this doesn't always scroll to bottom for img/video
           }
         }
 
