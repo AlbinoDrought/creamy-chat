@@ -29,6 +29,8 @@ Usernames will be loaded from basic auth if provided.
 
 For more debugging output, run with `CREAMY_CHAT_DEBUG=1`
 
+To use client-side OpenPGP in fixed-key / password mode, add the URL hash `#f-somefixedkeyhere`, like `http://localhost:3000/#f-somefixedkeyhere`
+
 ## Building
 
 ### With Docker
@@ -38,3 +40,7 @@ For more debugging output, run with `CREAMY_CHAT_DEBUG=1`
 ### Without Docker
 
 `go get && go build`
+
+## Threat Model
+
+The source code and compiled application available here are artistic works of boredom and ignorance. Only a fool would believe anything transmitted is secure.

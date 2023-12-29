@@ -3,7 +3,7 @@
   <head>
     <title>Creamy Chat</title>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
       html, body {
         background-color: rgb(27, 27, 27);
@@ -61,7 +61,7 @@
       #new-message-form {
         display: grid;
         padding: 1em;
-        grid-template-columns: 1fr 6ch;
+        grid-template-columns: 1fr 8ch;
         grid-gap: 1em;
       }
       #status {
@@ -88,15 +88,72 @@
       </div>
       <form id="new-message-form">
         <textarea id="new-message-content"></textarea>
-        <button>Send</button>
+        <button id="new-message-btn">Send</button>
       </form>
     </div>
     <div id="status"></div>
+    <script src="/openpgp.min.js"></script> 
     <script>
       const divMessages = document.getElementById('messages');
       const formNewMessage = document.getElementById('new-message-form');
       const txtNewMessage = document.getElementById('new-message-content');
+      const btnNewMessage = document.getElementById('new-message-btn');
       const divStatus = document.getElementById('status');
+
+      window.decodeMessageText = async function (text, message) {
+        return text;
+      };
+      window.encodeMessageText = async function (text, message) {
+        return text;
+      };
+
+      function loadFixedKey() {
+        // key="#f-foobar" or "f-foobar"
+        let key = window.location.hash;
+        if (!key) {
+          return;
+        }
+        if (key[0] === '#') {
+          // key="f-foobar"
+          key = key.slice(1);
+        }
+        if (!key.startsWith('f-')) {
+          return;
+        }
+        // key="foobar"
+        key = key.slice(2);
+        if (!key) {
+          return;
+        }
+
+        window.decodeMessageText = async function (text, message) {
+          try {
+            const result = await openpgp.decrypt({
+              message: await openpgp.readMessage({
+                armoredMessage: text,
+              }),
+              passwords: [key],
+            });
+            return result.data;
+          } catch (ex) {
+            console.error('error decoding text with fixed-key: ' + JSON.stringify({
+              ex: ex,
+              text: text,
+              message: message,
+            }));
+            return '(decoding failed)';
+          }
+        };
+        window.encodeMessageText = async function (text, message) {
+          return await openpgp.encrypt({
+            message: await openpgp.createMessage({ text: text }),
+            passwords: [key],
+          });
+        };
+        btnNewMessage.innerText += '\n(PGP-FK)';
+        console.log('enabled fixed-key mode');
+      }
+      loadFixedKey();
 
       const messages = [];
       /**
@@ -117,7 +174,7 @@
        *  },
        * }} message
        */
-      function messageReceived(message) {
+      async function messageReceived(message) {
         if (message && message.ping && message.ping.present) {
           updateStatus(true);
         }
@@ -175,7 +232,7 @@
 
           const divMessageText = document.createElement('div');
           divMessageText.setAttribute('class', 'message__text');
-          divMessageText.innerText = message.text.text;
+          divMessageText.innerText = await window.decodeMessageText(message.text.text, message);
           divMessage.appendChild(divMessageText);
 
           divMessages.appendChild(divMessage);
@@ -265,12 +322,12 @@
       }
 
       let sending = false;
-      function sendMessage() {
+      async function sendMessage() {
         if (sending) {
           return;
         }
         sending = true;
-        const text = txtNewMessage.value;
+        const text = await window.encodeMessageText(txtNewMessage.value);
 
         const promise = fetch('/send', {
           method: 'POST',

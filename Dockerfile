@@ -9,7 +9,7 @@ WORKDIR $GOPATH/src/github.com/AlbinoDrought/creamy-chat/
 COPY go.mod $GOPATH/src/github.com/AlbinoDrought/creamy-chat/
 RUN go mod download
 
-COPY main.go index.html $GOPATH/src/github.com/AlbinoDrought/creamy-chat/
+COPY main.go index.html openpgp.min.js $GOPATH/src/github.com/AlbinoDrought/creamy-chat/
 RUN go build -a -installsuffix cgo -o /go/bin/creamy-chat
 
 FROM scratch

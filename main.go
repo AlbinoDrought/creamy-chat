@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -15,6 +17,9 @@ import (
 //go:embed index.html
 var beautifulChatPage []byte
 
+//go:embed openpgp.min.js
+var openpgpJS []byte
+
 type TextMessage struct {
 	Present bool   `json:"present"`
 	Sender  string `json:"sender"`
@@ -22,7 +27,8 @@ type TextMessage struct {
 }
 
 type PingMessage struct {
-	Present bool `json:"present"`
+	Present bool   `json:"present"`
+	Random  string `json:"random"`
 }
 
 type SystemMessage struct {
@@ -111,13 +117,38 @@ func main() {
 		for range t.C {
 			msg := c.NewMessage()
 			msg.Ping.Present = true
+			length := []byte{0}
+			if _, err := rand.Read(length); err != nil {
+				slog.Error("failed to gen random length, using placeholder", "err", err)
+				length[0] = 69
+			}
+			if length[0] > 100 {
+				slog.Debug("capped ping junk length to 100", "orig", length[0])
+				length[0] = 100
+			}
+			randBytes := make([]byte, length[0])
+			if _, err := rand.Read(randBytes); err != nil {
+				slog.Error("failed to gen random bytes, using idx", "err", err)
+				for i := range randBytes {
+					randBytes[i] = byte(i)
+				}
+			}
+			msg.Ping.Random = base64.StdEncoding.EncodeToString(randBytes)
+
 			c.Send(msg)
 		}
 	}()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
 		w.Write(beautifulChatPage)
 		slog.Debug("served landing page")
+	})
+
+	http.HandleFunc("/openpgp.min.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		w.Write(openpgpJS)
+		slog.Debug("served openpgp js")
 	})
 
 	http.HandleFunc("/send", func(w http.ResponseWriter, r *http.Request) {
