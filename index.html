@@ -82,6 +82,11 @@
         word-wrap: break-word;
         word-break: break-all;
       }
+      .message__file-img {
+        display: block;
+        max-width: 100%;
+        max-height: 30vh;
+      }
       .link {
         text-decoration: none;
         color: rgb(95, 95, 177);
@@ -462,9 +467,16 @@
             ));
             linkFileDownload.setAttribute('href', url);
             linkFileDownload.setAttribute('target', '_blank');
-            linkFileDownload.setAttribute('class', 'link');
+            linkFileDownload.setAttribute('class', 'link message__file-link');
             linkFileDownload.innerText = existing.filename;
             divMessageText.appendChild(linkFileDownload);
+
+            if (existing.mimetype.startsWith('image/')) {
+              const imgFile = document.createElement('img');
+              imgFile.setAttribute('src', url);
+              imgFile.setAttribute('class', 'message__file-img');
+              linkFileDownload.appendChild(imgFile);
+            }
 
             divMessage.appendChild(divMessageText);
 
