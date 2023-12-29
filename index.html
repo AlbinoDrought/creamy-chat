@@ -82,7 +82,7 @@
         word-wrap: break-word;
         word-break: break-all;
       }
-      .message__file-img, .message__file-video {
+      .message__file-img, .message__file-video, .message__file-audio {
         display: block;
         max-width: 100%;
         max-height: 50vh;
@@ -483,6 +483,13 @@
               videoFile.setAttribute('class', 'message__file-video');
               videoFile.setAttribute('controls', '');
               linkFileDownload.appendChild(videoFile);
+            }
+            if (existing.mimetype.startsWith('audio/')) {
+              const audioFile = document.createElement('audio');
+              audioFile.setAttribute('src', url);
+              audioFile.setAttribute('class', 'message__file-audio');
+              audioFile.setAttribute('controls', '');
+              linkFileDownload.appendChild(audioFile);
             }
 
             divMessage.appendChild(divMessageText);
