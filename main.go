@@ -25,21 +25,35 @@ type PingMessage struct {
 	Present bool `json:"present"`
 }
 
+type SystemMessage struct {
+	Present bool   `json:"present"`
+	Text    string `json:"text"`
+}
+
 type Message struct {
-	ID   string      `json:"id"`
-	Time string      `json:"time"` // RFC3339
-	Text TextMessage `json:"text"`
-	Ping PingMessage `json:"ping"`
+	ID     string        `json:"id"`
+	Time   string        `json:"time"` // RFC3339
+	Text   TextMessage   `json:"text"`
+	Ping   PingMessage   `json:"ping"`
+	System SystemMessage `json:"system"`
 }
 
 type chatter struct {
-	receivers sync.Map
-	ctr       uint32
+	receivers     sync.Map
+	receiverCount int32
+	ctr           uint32
 }
 
 func (s *chatter) NewID() string {
 	ctr := atomic.AddUint32(&s.ctr, 1)
 	return fmt.Sprintf("%X.%X", time.Now().Unix(), ctr)
+}
+
+func (s *chatter) NewMessage() Message {
+	return Message{
+		ID:   s.NewID(),
+		Time: time.Now().Format(time.RFC3339),
+	}
 }
 
 func (s *chatter) Send(message Message) {
@@ -51,12 +65,28 @@ func (s *chatter) Send(message Message) {
 
 func (s *chatter) Receive() (string, <-chan Message, func()) {
 	id := s.NewID()
-	ch := make(chan Message)
+	ch := make(chan Message, 10)
 	close := func() {
 		s.receivers.Delete(id)
 		close(ch)
+
+		{
+			currentCount := atomic.AddInt32(&s.receiverCount, -1)
+			msg := s.NewMessage()
+			msg.System.Present = true
+			msg.System.Text = fmt.Sprintf("(--chatter)==%v", currentCount)
+			s.Send(msg)
+		}
 	}
 	s.receivers.Store(id, ch)
+
+	{
+		currentCount := atomic.AddInt32(&s.receiverCount, 1)
+		msg := s.NewMessage()
+		msg.System.Present = true
+		msg.System.Text = fmt.Sprintf("(++chatter)==%v", currentCount)
+		s.Send(msg)
+	}
 
 	return id, ch, close
 }
@@ -73,19 +103,13 @@ func main() {
 	}
 
 	c := chatter{}
-	newMsg := func() Message {
-		return Message{
-			ID:   c.NewID(),
-			Time: time.Now().Format(time.RFC3339),
-		}
-	}
 
 	go func() {
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
 
 		for range t.C {
-			msg := newMsg()
+			msg := c.NewMessage()
 			msg.Ping.Present = true
 			c.Send(msg)
 		}
@@ -112,7 +136,7 @@ func main() {
 			txtMessage.Sender = "anon"
 		}
 
-		msg := newMsg()
+		msg := c.NewMessage()
 		msg.Text = txtMessage
 
 		w.Header().Set("Content-Type", "text/json")
@@ -154,7 +178,7 @@ func main() {
 		}
 
 		{
-			msg := newMsg()
+			msg := c.NewMessage()
 			msg.ID = "SERVER-HELLO"
 			msg.Ping.Present = true
 			if err := write(msg); err != nil {

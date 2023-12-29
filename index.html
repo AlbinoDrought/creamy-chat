@@ -34,6 +34,12 @@
         grid-template-columns: 1fr;
         margin: .25em 0;
       }
+      .message--system {
+        opacity: .6;
+      }
+      .message--system .message__text {
+        font-family: monospace;
+      }
       @media (min-width: 500px) {
         .message {
           grid-gap: 1em;
@@ -105,11 +111,44 @@
        *    sender: string,
        *    text: string,
        *  },
+       *  system?: {
+       *    present: boolean,
+       *    text: string,
+       *  },
        * }} message
        */
       function messageReceived(message) {
         if (message && message.ping && message.ping.present) {
           updateStatus(true);
+        }
+
+        if (message && message.system && message.system.present) {
+          const divMessage = document.createElement('div');
+          divMessage.setAttribute('class', 'message message--system');
+          divMessage.setAttribute('data-msg-id', message.id);
+
+          const divMessageTS = document.createElement('div');
+          divMessageTS.setAttribute('class', 'message__ts');
+          const longTime = (new Date(message.time)).toLocaleString();
+          const shortTime = (new Date(message.time)).toLocaleTimeString(undefined, {
+            timeStyle: 'short',
+          });
+          divMessageTS.innerText = shortTime;
+          divMessageTS.setAttribute('title', longTime);
+          divMessage.appendChild(divMessageTS);
+
+          const divMessageAuthor = document.createElement('div');
+          divMessageAuthor.setAttribute('class', 'message__author');
+          divMessageAuthor.innerText = '';
+          divMessage.appendChild(divMessageAuthor);
+
+          const divMessageText = document.createElement('div');
+          divMessageText.setAttribute('class', 'message__text');
+          divMessageText.innerText = message.system.text;
+          divMessage.appendChild(divMessageText);
+
+          divMessages.appendChild(divMessage);
+          divMessages.scrollTop = divMessages.scrollHeight;
         }
 
         if (message && message.text && message.text.present) {
