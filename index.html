@@ -232,11 +232,14 @@
           });
       }
 
+      let receiving = false;
+      let receiveBackoff = 0;
       function updateStatus(alive) {
         if (alive) {
           divStatus.innerText = 'Connected';
           divStatus.classList.add('status', 'status--connected');
           divStatus.classList.remove('status--disconnected');
+          receiveBackoff = 0;
         } else {
           divStatus.innerText = 'Disconnected';
           divStatus.classList.add('status', 'status--disconnected');
@@ -244,8 +247,6 @@
         }
       }
       updateStatus(false);
-
-      let receiving = false;
       async function receiveLoop() {
         receiving = true;
         try {
@@ -255,7 +256,11 @@
         } finally {
           receiving = false;
           updateStatus(false);
-          setTimeout(() => receiveLoop(), 1000);
+          receiveBackoff++;
+          if (receiveBackoff > 60) {
+            receiveBackoff = 60;
+          }
+          setTimeout(() => receiveLoop(), receiveBackoff * 1000);
         }
       }
 
