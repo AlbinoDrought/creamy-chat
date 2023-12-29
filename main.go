@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,18 @@ type TextMessage struct {
 	Text    string `json:"text"`
 }
 
+type FileMessage struct {
+	Present    bool   `json:"present"`
+	Sender     string `json:"sender"`
+	ClientUUID string `json:"client_uuid"`
+	Filename   string `json:"filename"`
+	Mimetype   string `json:"mimetype"`
+	HashSHA256 string `json:"hash_sha256"`
+	DataB64    string `json:"data_b64"`
+	TotalSize  int    `json:"total_size"`
+	Offset     int    `json:"offset"`
+}
+
 type PingMessage struct {
 	Present bool   `json:"present"`
 	Random  string `json:"random"`
@@ -40,6 +53,7 @@ type Message struct {
 	ID     string        `json:"id"`
 	Time   string        `json:"time"` // RFC3339
 	Text   TextMessage   `json:"text"`
+	File   FileMessage   `json:"file"`
 	Ping   PingMessage   `json:"ping"`
 	System SystemMessage `json:"system"`
 }
@@ -108,6 +122,18 @@ func main() {
 		slog.SetDefault(slog.New(h))
 	}
 
+	chunkSizeLimit := 2 * 1024 * 1024 // 2MB (max encoded chunk size)
+	sizeLimit := 20 * 1024 * 1024     // 20MB
+	sizeLimitEnv := os.Getenv("CREAMY_CHAT_FILE_SIZE_LIMIT")
+	if sizeLimitEnv != "" {
+		sizeLimitEnvI, err := strconv.Atoi(sizeLimitEnv)
+		if err != nil {
+			slog.Error("failed to parse CREAMY_CHAT_FILE_SIZE_LIMIT", "env", sizeLimitEnv, "err", err)
+			os.Exit(1)
+		}
+		sizeLimit = sizeLimitEnvI
+	}
+
 	c := chatter{}
 
 	go func() {
@@ -170,10 +196,56 @@ func main() {
 		msg := c.NewMessage()
 		msg.Text = txtMessage
 
-		w.Header().Set("Content-Type", "text/json")
-		json.NewEncoder(w).Encode(&msg)
+		w.Header().Set("Creamy-Chat-Message-ID", msg.ID)
+		w.WriteHeader(http.StatusNoContent)
 
 		slog.Debug("sending text message", "msg", msg.ID)
+		c.Send(msg)
+	})
+
+	http.HandleFunc("/file", func(w http.ResponseWriter, r *http.Request) {
+		fileMessage := FileMessage{}
+		if err := json.NewDecoder(r.Body).Decode(&fileMessage); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad Request: Invalid JSON"))
+			slog.Debug("error while decoding JSON during /file", "err", err)
+			return
+		}
+		fileMessage.Present = true
+		if u, _, ok := r.BasicAuth(); ok {
+			fileMessage.Sender = u
+		}
+		if fileMessage.Sender == "" {
+			fileMessage.Sender = "anon"
+		}
+		if fileMessage.TotalSize == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad Request: File must have size"))
+			return
+		}
+		if fileMessage.TotalSize > sizeLimit {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad Request: File Too Large"))
+			return
+		}
+		if fileMessage.Offset > sizeLimit {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad Request: Offset Too Large"))
+			return
+		}
+		if len(fileMessage.DataB64) > chunkSizeLimit {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad Request: Chunk Too Large"))
+			return
+		}
+
+		msg := c.NewMessage()
+		msg.File = fileMessage
+
+		w.Header().Set("Creamy-Chat-Message-ID", msg.ID)
+		w.WriteHeader(http.StatusNoContent)
+
+		slog.Debug("sending file message", "msg", msg.ID)
 		c.Send(msg)
 	})
 

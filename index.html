@@ -29,6 +29,26 @@
         height: 100%;
         padding: 1em;
       }
+      .btn {
+        border: none;
+        background: none;
+        border: 1px solid rgb(171, 171, 171);
+        background-color: rgb(130, 130, 130);
+        color: black;
+        transition: background-color linear .05s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: .9em;
+        font-family: sans-serif;
+      }
+      .btn:hover {
+        background-color: rgb(171, 171, 171);
+      }
+      .btn:active {
+        background-color: rgb(150, 150, 150);
+      }
       .message {
         display: grid;
         grid-template-columns: 1fr;
@@ -37,7 +57,11 @@
       .message--system {
         opacity: .6;
       }
-      .message--system .message__text {
+      .message--file {
+        opacity: .6;
+        font-style: italic;
+      }
+      .message--system .message__text, .message--file .message__text {
         font-family: monospace;
       }
       @media (min-width: 500px) {
@@ -58,11 +82,22 @@
         word-wrap: break-word;
         word-break: break-all;
       }
+      .link {
+        text-decoration: none;
+        color: rgb(95, 95, 177);
+      }
       #new-message-form {
         display: grid;
         padding: 1em;
-        grid-template-columns: 1fr 8ch;
+        grid-template-columns: 1fr 7ch 10ch;
         grid-gap: 1em;
+      }
+      .file {
+        overflow: hidden;
+      }
+      .file label {
+        height: 100%;
+        user-select: none;
       }
       #status {
         position: fixed;
@@ -88,7 +123,11 @@
       </div>
       <form id="new-message-form">
         <textarea id="new-message-content"></textarea>
-        <button id="new-message-btn">Send</button>
+        <div class="file">
+          <label for="file-input" class="btn" id="file-label">Attach</label>
+          <input type="file" multiple id="file-input" style="display: none" />
+        </div>
+        <button id="new-message-btn" class="btn">Send</button>
       </form>
     </div>
     <div id="status"></div>
@@ -98,13 +137,133 @@
       const formNewMessage = document.getElementById('new-message-form');
       const txtNewMessage = document.getElementById('new-message-content');
       const btnNewMessage = document.getElementById('new-message-btn');
+      const btnFile = document.getElementById('file-input');
+      const lblFile = document.getElementById('file-label');
       const divStatus = document.getElementById('status');
 
+      /**
+       * @typedef {{
+       *  id: string,
+       *  time: string,
+       *  ping?: {
+       *    present: boolean,
+       *  },
+       *  text?: {
+       *    present: boolean,
+       *    sender: string,
+       *    text: string,
+       *  },
+       *  file?: {
+       *    present: boolean,
+       *    sender: string,
+       *    client_uuid: string,
+       *    filename: string,
+       *    mimetype: string,
+       *    hash_sha256: string,
+       *    data_b64: string,
+       *    total_size: number,
+       *    offset: number,
+       *  },
+       *  system?: {
+       *    present: boolean,
+       *    text: string,
+       *  },
+       * }} CreamyMessage
+       */
+      /**
+       * @typedef {{
+       *  client_uuid: string,
+       *  filename: string,
+       *  mimetype: string,
+       *  hash_sha256: string,
+       *  total_size: number,
+       *  data: Uint8Array,
+       *  written: number,
+       * }} CreamyFileData
+       */
+
+      /**
+       * @param {Blob} blob
+       * @returns {Promise<ArrayBuffer>}
+       */
+      async function readAsBuffer(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = (err) => reject(err);
+          reader.readAsArrayBuffer(blob);
+        });
+      }
+      /**
+       * @param {Blob} blob
+       * @returns {Promise<string>}
+       */
+      async function readAsB64(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+          reader.onerror = (err) => reject(err);
+          reader.readAsDataURL(blob);
+        });
+      }
+      /**
+       * @param {string} text
+       * @returns {Blob}
+       */
+      async function base64ToBlob(base64) {
+        const resp = await fetch('data:application/octet-stream;base64,' + base64);
+        return await resp.blob();
+      }
+      /**
+       * @param {Blob} blob
+       * @returns {Uint8Array}
+       */
+      async function blobToUint8Array(blob) {
+        const arrayBuffer = await blob.arrayBuffer();
+        return new Uint8Array(arrayBuffer);
+      }
+      /**
+       * @param {ArrayBuffer} arrayBuffer
+       * @returns {string}
+       */
+      function arrayBufferToHex(arrayBuffer) {
+        return Array.from(new Uint8Array(arrayBuffer))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
+
+      /**
+       * @param {string} text
+       * @param {CreamyMessage} message
+       * @returns {string}
+       */
       window.decodeMessageText = async function (text, message) {
         return text;
       };
+      /**
+       * @param {string} text
+       * @param {CreamyMessage} message
+       * @returns {string}
+       */
       window.encodeMessageText = async function (text, message) {
         return text;
+      };
+
+      /**
+       * @param {string} text
+       * @param {CreamyMessage} message
+       * @returns {Blob}
+       */
+      window.decodeMessageBinary = async function (text, message) {
+        return await base64ToBlob(text);
+      };
+      /**
+       * @param {Blob} blob
+       * @param {CreamyMessage} message
+       * @returns {string}
+       */
+      window.encodeMessageBinary = async function (blob, message) {
+        return await readAsB64(blob);
       };
 
       function loadFixedKey() {
@@ -150,29 +309,33 @@
             passwords: [key],
           });
         };
+        window.decodeMessageBinary = async function (text, message) {
+          const result = await openpgp.decrypt({
+            message: await openpgp.readMessage({
+              binaryMessage: await blobToUint8Array(await base64ToBlob(text)),
+            }),
+            passwords: [key],
+            format: 'binary',
+          });
+          return new Blob([result.data]);
+        };
+        window.encodeMessageBinary = async function (blob, message) {
+          const enc = await openpgp.encrypt({
+            message: await openpgp.createMessage({ binary: await blobToUint8Array(blob) }),
+            passwords: [key],
+            format: 'binary',
+          });
+          return await readAsB64(new Blob([enc]));
+        };
         btnNewMessage.innerText += '\n(PGP-FK)';
         console.log('enabled fixed-key mode');
       }
       loadFixedKey();
 
-      const messages = [];
+      const files = new Map();
+
       /**
-       * @param {{
-       *  id: string,
-       *  time: string,
-       *  ping?: {
-       *    present: boolean,
-       *  },
-       *  text?: {
-       *    present: boolean,
-       *    sender: string,
-       *    text: string,
-       *  },
-       *  system?: {
-       *    present: boolean,
-       *    text: string,
-       *  },
-       * }} message
+       * @param {CreamyMessage} message
        */
       async function messageReceived(message) {
         if (message && message.ping && message.ping.present) {
@@ -208,9 +371,109 @@
           divMessages.scrollTop = divMessages.scrollHeight;
         }
 
-        if (message && message.text && message.text.present) {
-          messages.push(message);
+        if (message && message.file && message.file.present) {
+          const data = await blobToUint8Array(
+            await window.decodeMessageBinary(message.file.data_b64),
+          );
+          /** @type {CreamyFileData} */
+          const existing = files.get(message.file.client_uuid) || {
+            client_uuid: message.file.client_uuid,
+            filename: '',
+            mimetype: '',
+            hash_sha256: '',
+            total_size: message.file.total_size,
+            data: new Uint8Array(new ArrayBuffer(message.file.total_size)),
+            written: 0,
+          };
+          files.set(message.file.client_uuid, existing);
+          // perform these after updating map, otherwise can race
+          if (existing.written === 0) {
+            existing.filename = await window.decodeMessageText(message.file.filename) || 'file.bin';
+            existing.mimetype = await window.decodeMessageText(message.file.mimetype) || 'application/octet-stream';
+            existing.hash_sha256 = await window.decodeMessageText(message.file.hash_sha256);
+          }
+          existing.data.set(data, message.file.offset);
+          existing.written += data.byteLength;
 
+          {
+            const divMessage = document.createElement('div');
+            divMessage.setAttribute('class', 'message message--file');
+            divMessage.setAttribute('data-msg-id', message.id);
+
+            const divMessageTS = document.createElement('div');
+            divMessageTS.setAttribute('class', 'message__ts');
+            const longTime = (new Date(message.time)).toLocaleString();
+            const shortTime = (new Date(message.time)).toLocaleTimeString(undefined, {
+              timeStyle: 'short',
+            });
+            divMessageTS.innerText = shortTime;
+            divMessageTS.setAttribute('title', longTime);
+            divMessage.appendChild(divMessageTS);
+
+            const divMessageAuthor = document.createElement('div');
+            divMessageAuthor.setAttribute('class', 'message__author');
+            divMessageAuthor.innerText = message.file.sender;
+            divMessage.appendChild(divMessageAuthor);
+
+            const divMessageText = document.createElement('div');
+            divMessageText.setAttribute('class', 'message__text');
+            divMessageText.innerText = existing.filename + ' += ' + data.byteLength + ' bytes, total ' + existing.written + '/' + existing.total_size;
+            divMessage.appendChild(divMessageText);
+
+            divMessages.appendChild(divMessage);
+            divMessages.scrollTop = divMessages.scrollHeight;
+          }
+
+          if (existing.written === existing.total_size) {
+            files.delete(existing.client_uuid);
+
+            const hash = arrayBufferToHex(await crypto.subtle.digest('SHA-256', existing.data));
+            if (hash !== existing.hash_sha256) {
+              throw new Error('hash mismatch: got ' + hash + ' but expected ' + existing.hash_sha256);
+            }
+
+            const divMessage = document.createElement('div');
+            divMessage.setAttribute('class', 'message');
+            divMessage.setAttribute('data-msg-id', message.id);
+
+            const divMessageTS = document.createElement('div');
+            divMessageTS.setAttribute('class', 'message__ts');
+            const longTime = (new Date(message.time)).toLocaleString();
+            const shortTime = (new Date(message.time)).toLocaleTimeString(undefined, {
+              timeStyle: 'short',
+            });
+            divMessageTS.innerText = shortTime;
+            divMessageTS.setAttribute('title', longTime);
+            divMessage.appendChild(divMessageTS);
+
+            const divMessageAuthor = document.createElement('div');
+            divMessageAuthor.setAttribute('class', 'message__author');
+            divMessageAuthor.innerText = message.file.sender;
+            divMessage.appendChild(divMessageAuthor);
+
+            const divMessageText = document.createElement('div');
+            divMessageText.setAttribute('class', 'message__text');
+
+            const linkFileDownload = document.createElement('a');
+            const url = window.URL.createObjectURL(new File(
+              [new Blob([existing.data], { type: existing.mimetype })],
+              existing.filename,
+              { type: existing.mimetype },
+            ));
+            linkFileDownload.setAttribute('href', url);
+            linkFileDownload.setAttribute('target', '_blank');
+            linkFileDownload.setAttribute('class', 'link');
+            linkFileDownload.innerText = existing.filename;
+            divMessageText.appendChild(linkFileDownload);
+
+            divMessage.appendChild(divMessageText);
+
+            divMessages.appendChild(divMessage);
+            divMessages.scrollTop = divMessages.scrollHeight;
+          }
+        }
+
+        if (message && message.text && message.text.present) {
           const divMessage = document.createElement('div');
           divMessage.setAttribute('class', 'message');
           divMessage.setAttribute('data-msg-id', message.id);
@@ -264,7 +527,7 @@
             controller.abort('No message received in 5s');
           }
         }, 5000);
-        return fetch('/receive', {
+        return fetch('/receive?v=0', {
           signal: controller.signal,
         })
           .then((response) => {
@@ -321,40 +584,89 @@
         }
       }
 
+      function updateFileBtnText() {
+        if (btnFile.files.length) {
+          lblFile.innerText = 'Attach\n(' + btnFile.files.length + ')';
+        } else {
+          lblFile.innerText = 'Attach';
+        }
+      }
+      btnFile.addEventListener('change', () => {
+        updateFileBtnText();
+      });
+
       let sending = false;
       async function sendMessage() {
         if (sending) {
           return;
         }
         sending = true;
-        const text = await window.encodeMessageText(txtNewMessage.value);
 
-        const promise = fetch('/send', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            text: text,
-          }),
-        })
-          .then((response) => {
-            if (response.status != 200) {
-              throw new Error('Unexpected response status: ' + reponse.status);
+        const rawText = txtNewMessage.value;
+        const rawFiles = btnFile.files;
+
+        try {
+          if (rawText.length > 0) {
+            const text = await window.encodeMessageText(rawText);
+            const resp = await fetch('/send', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                text: text,
+              }),
+            });
+            if (resp.status != 204) {
+              throw new Error('Unexpected response status: ' + resp.status);
             }
-            // successfully submitted
-            txtNewMessage.value = '';
-            return response.json();
-          })
-          .finally(() => {
-            sending = false;
-          });
+          }
+          if (rawFiles.length > 0) {
+            const chunkSize = 512 * 1024; // 512KB
+            for (let i = 0; i < rawFiles.length; i += 1) {
+              /** @type {File} */
+              const file = rawFiles[i];
+              const data = await readAsBuffer(rawFiles[i]);
+              const filename = await window.encodeMessageText(file.name || '');
+              const mimetype = await window.encodeMessageText(file.type);
+              const hash = await window.encodeMessageText(arrayBufferToHex(await crypto.subtle.digest('SHA-256', data)));
+              const clientUUID = '' + Date.now() + Math.random();
+              for (let offset = 0; offset < file.size; offset += chunkSize) {
+                const chunk = new Blob([data.slice(offset, offset+chunkSize)]);
+                const resp = await fetch('/file', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    client_uuid: clientUUID,
+                    filename: filename,
+                    mimetype: mimetype,
+                    hash_sha256: hash,
+                    data_b64: await window.encodeMessageBinary(chunk),
+                    total_size: file.size,
+                    offset: offset,
+                  }),
+                });
+                if (resp.status != 204) {
+                  throw new Error('Unexpected response status during file upload: ' + resp.status);
+                }
+              }
+            }
+          }
+          // successfully submitted
+          txtNewMessage.value = '';
+          btnFile.value = null;
+          updateFileBtnText();
+        } finally {
+          sending = false;
+        }
       }
       formNewMessage.addEventListener('submit', (e) => {
         e.preventDefault();
         sendMessage();
       });
-      txtNewMessage.addEventListener('keypress', function (e) {
+      txtNewMessage.addEventListener('keypress', (e) => {
         // submit with enter, add newline with shift+enter
         if (e.which === 13 && !e.shiftKey) {
           e.preventDefault();
