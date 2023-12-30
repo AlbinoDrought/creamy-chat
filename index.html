@@ -622,14 +622,17 @@
         }
       }
 
+      let pastedFiles = [];
       function updateFileBtnText() {
-        if (btnFile.files.length) {
-          lblFile.innerText = 'Attach\n(' + btnFile.files.length + ')';
+        const filesLength = btnFile.files.length + pastedFiles.length;
+        if (filesLength) {
+          lblFile.innerText = 'Attach\n(' + filesLength + ')';
         } else {
           lblFile.innerText = 'Attach';
         }
       }
       btnFile.addEventListener('change', () => {
+        pastedFiles = [];
         updateFileBtnText();
       });
 
@@ -641,7 +644,10 @@
         sending = true;
 
         const rawText = txtNewMessage.value;
-        const rawFiles = btnFile.files;
+        const rawFiles = [
+          ...btnFile.files,
+          ...pastedFiles,
+        ];
 
         try {
           if (rawText.length > 0) {
@@ -710,6 +716,13 @@
           e.preventDefault();
           sendMessage();
         }
+      });
+      document.addEventListener('paste', (e) => {
+        pastedFiles = [
+          ...pastedFiles,
+          ...e.clipboardData.files,
+        ];
+        updateFileBtnText();
       });
 
       receiveLoop();
