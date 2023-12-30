@@ -89,7 +89,7 @@
       }
       .link {
         text-decoration: none;
-        color: rgb(95, 95, 177);
+        color: rgb(125, 125, 234);
       }
       #new-message-form {
         display: grid;
@@ -145,6 +145,8 @@
       const btnFile = document.getElementById('file-input');
       const lblFile = document.getElementById('file-label');
       const divStatus = document.getElementById('status');
+
+      const urlRegex = /(https:\/\/\S+(?:\.|:)\S+)/gi;
 
       /**
        * @typedef {{
@@ -533,7 +535,23 @@
 
           const divMessageText = document.createElement('div');
           divMessageText.setAttribute('class', 'message__text');
-          divMessageText.innerText = await window.decodeMessageText(message.text.text, message);
+
+          const text = await window.decodeMessageText(message.text.text, message);
+          const parts = text.split(urlRegex);
+          parts.forEach((part) => {
+            if (part.startsWith('https://')) {
+              const link = document.createElement('a');
+              link.innerText = part;
+              link.setAttribute('href', link);
+              link.setAttribute('target', '_blank');
+              link.setAttribute('class', 'link');
+              divMessageText.appendChild(link);
+            } else {
+              const span = document.createElement('span');
+              span.innerText = part;
+              divMessageText.appendChild(span);
+            }
+          });
           divMessage.appendChild(divMessageText);
 
           divMessages.appendChild(divMessage);
