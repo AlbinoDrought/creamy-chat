@@ -227,15 +227,17 @@ func main() {
 			w.Write([]byte("Bad Request: File must have size"))
 			return
 		}
-		if fileMessage.TotalSize > sizeLimit {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Bad Request: File Too Large"))
-			return
-		}
-		if fileMessage.Offset > sizeLimit {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Bad Request: Offset Too Large"))
-			return
+		if sizeLimit != 0 {
+			if fileMessage.TotalSize > sizeLimit {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Bad Request: File Too Large"))
+				return
+			}
+			if fileMessage.Offset > sizeLimit {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Bad Request: Offset Too Large"))
+				return
+			}
 		}
 		if len(fileMessage.DataB64) > chunkSizeLimit {
 			w.WriteHeader(http.StatusBadRequest)

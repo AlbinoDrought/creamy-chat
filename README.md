@@ -29,6 +29,8 @@ Usernames will be loaded from basic auth if provided.
 
 For more debugging output, run with `CREAMY_CHAT_DEBUG=1`
 
+The file size limit defaults to ~20MB. To increase it, set `CREAMY_CHAT_FILE_SIZE_LIMIT` to the max number of bytes. To disable it, set `CREAMY_CHAT_FILE_SIZE_LIMIT` to `0`.
+
 To use client-side OpenPGP in fixed-key / password mode, add the URL hash `#f-somefixedkeyhere`, like `http://localhost:3000/#f-somefixedkeyhere`
 
 ## Building
