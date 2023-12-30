@@ -434,7 +434,10 @@
 
             const divMessageText = document.createElement('div');
             divMessageText.setAttribute('class', 'message__text');
-            divMessageText.innerText = existing.filename + ' += ' + data.byteLength + ' bytes, total ' + existing.written + '/' + existing.total_size;
+            const percent = ((existing.total_size > 0
+              ? (existing.written / existing.total_size)
+              : 0) * 100).toFixed(2)
+            divMessageText.innerText = existing.filename + ' ' + percent + '%  (' + existing.written + '/' + existing.total_size + ' bytes)' ;
             divMessage.appendChild(divMessageText);
 
             if (divMessageNew) {
