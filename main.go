@@ -137,7 +137,7 @@ func main() {
 	c := chatter{}
 
 	go func() {
-		t := time.NewTicker(10 * time.Second)
+		t := time.NewTimer(10 * time.Second)
 		defer t.Stop()
 
 		for range t.C {
@@ -162,6 +162,10 @@ func main() {
 			msg.Ping.Random = base64.StdEncoding.EncodeToString(randBytes)
 
 			c.Send(msg)
+
+			// send another ping anywhere from 2s to 30s from now
+			nextPing := 2 + (length[0] % (30 - 2))
+			t.Reset(time.Duration(nextPing) * time.Second)
 		}
 	}()
 
