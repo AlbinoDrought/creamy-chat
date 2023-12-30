@@ -35,8 +35,8 @@ type FileMessage struct {
 	Mimetype   string `json:"mimetype"`
 	HashSHA256 string `json:"hash_sha256"`
 	DataB64    string `json:"data_b64"`
-	TotalSize  int    `json:"total_size"`
-	Offset     int    `json:"offset"`
+	TotalSize  uint64 `json:"total_size"`
+	Offset     uint64 `json:"offset"`
 }
 
 type PingMessage struct {
@@ -122,11 +122,11 @@ func main() {
 		slog.SetDefault(slog.New(h))
 	}
 
-	chunkSizeLimit := 2 * 1024 * 1024 // 2MB (max encoded chunk size)
-	sizeLimit := 20 * 1024 * 1024     // 20MB
+	chunkSizeLimit := 2 * 1024 * 1024     // 2MB (max encoded chunk size)
+	sizeLimit := uint64(20 * 1024 * 1024) // 20MB
 	sizeLimitEnv := os.Getenv("CREAMY_CHAT_FILE_SIZE_LIMIT")
 	if sizeLimitEnv != "" {
-		sizeLimitEnvI, err := strconv.Atoi(sizeLimitEnv)
+		sizeLimitEnvI, err := strconv.ParseUint(sizeLimitEnv, 10, 64)
 		if err != nil {
 			slog.Error("failed to parse CREAMY_CHAT_FILE_SIZE_LIMIT", "env", sizeLimitEnv, "err", err)
 			os.Exit(1)
