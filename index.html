@@ -482,14 +482,14 @@
               videoFile.setAttribute('src', url);
               videoFile.setAttribute('class', 'message__file-video');
               videoFile.setAttribute('controls', '');
-              linkFileDownload.appendChild(videoFile);
+              divMessageText.appendChild(videoFile);
             }
             if (existing.mimetype.startsWith('audio/')) {
               const audioFile = document.createElement('audio');
               audioFile.setAttribute('src', url);
               audioFile.setAttribute('class', 'message__file-audio');
               audioFile.setAttribute('controls', '');
-              linkFileDownload.appendChild(audioFile);
+              divMessageText.appendChild(audioFile);
             }
 
             divMessage.appendChild(divMessageText);
