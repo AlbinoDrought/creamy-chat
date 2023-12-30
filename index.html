@@ -401,9 +401,19 @@
           existing.written += data.byteLength;
 
           {
-            const divMessage = document.createElement('div');
-            divMessage.setAttribute('class', 'message message--file');
-            divMessage.setAttribute('data-msg-id', message.id);
+            const divHash = btoa(existing.client_uuid + '|' + existing.hash_sha256);
+            let divMessage = document.querySelector('div.message[data-file-prog-hash="' + divHash + '"]');
+            let divMessageNew;
+            if (divMessage) {
+              divMessageNew = false;
+              divMessage.innerHTML = '';
+            } else {
+              divMessageNew = true;
+              divMessage = document.createElement('div');
+              divMessage.setAttribute('class', 'message message--file');
+              divMessage.setAttribute('data-msg-id', message.id);
+              divMessage.setAttribute('data-file-prog-hash', divHash);
+            }
 
             const divMessageTS = document.createElement('div');
             divMessageTS.setAttribute('class', 'message__ts');
@@ -425,8 +435,10 @@
             divMessageText.innerText = existing.filename + ' += ' + data.byteLength + ' bytes, total ' + existing.written + '/' + existing.total_size;
             divMessage.appendChild(divMessageText);
 
-            divMessages.appendChild(divMessage);
-            divMessages.scrollTop = divMessages.scrollHeight;
+            if (divMessageNew) {
+              divMessages.appendChild(divMessage);
+              divMessages.scrollTop = divMessages.scrollHeight;
+            }
           }
 
           if (existing.written === existing.total_size) {
