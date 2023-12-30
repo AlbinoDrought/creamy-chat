@@ -94,7 +94,7 @@ func (s *chatter) Receive() (string, <-chan Message, func()) {
 			currentCount := atomic.AddInt32(&s.receiverCount, -1)
 			msg := s.NewMessage()
 			msg.System.Present = true
-			msg.System.Text = fmt.Sprintf("total chatters +1 = %v", currentCount)
+			msg.System.Text = fmt.Sprintf("total chatters -1 = %v", currentCount)
 			s.Send(msg)
 		}
 	}
@@ -104,7 +104,7 @@ func (s *chatter) Receive() (string, <-chan Message, func()) {
 		currentCount := atomic.AddInt32(&s.receiverCount, 1)
 		msg := s.NewMessage()
 		msg.System.Present = true
-		msg.System.Text = fmt.Sprintf("total chatters -1 = %v", currentCount)
+		msg.System.Text = fmt.Sprintf("total chatters +1 = %v", currentCount)
 		s.Send(msg)
 	}
 
