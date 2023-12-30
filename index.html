@@ -701,6 +701,7 @@
           // successfully submitted
           txtNewMessage.value = '';
           btnFile.value = null;
+          pastedFiles = [];
           updateFileBtnText();
         } finally {
           sending = false;
@@ -717,12 +718,30 @@
           sendMessage();
         }
       });
-      document.addEventListener('paste', (e) => {
-        pastedFiles = [
-          ...pastedFiles,
-          ...e.clipboardData.files,
-        ];
+      function loadDataTransferFiles(dataTransfer) {
+        if (dataTransfer.items) {
+          [...dataTransfer.items].forEach((item) => {
+            if (item.kind === 'file') {
+              pastedFiles.push(item.getAsFile());
+            }
+          });
+        } else {
+          pastedFiles = [
+            ...pastedFiles,
+            ...e.clipboardData.files,
+          ];
+        }
         updateFileBtnText();
+      }
+      document.addEventListener('paste', (e) => {
+        loadDataTransferFiles(e.clipboardData);
+      });
+      document.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      document.addEventListener('drop', (e) => {
+        e.preventDefault();
+        loadDataTransferFiles(e.dataTransfer);
       });
 
       receiveLoop();
