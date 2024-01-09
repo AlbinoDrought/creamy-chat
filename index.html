@@ -138,13 +138,27 @@
     <div id="status"></div>
     <script src="/openpgp.min.js"></script> 
     <script>
-      const divMessages = document.getElementById('messages');
-      const formNewMessage = document.getElementById('new-message-form');
-      const txtNewMessage = document.getElementById('new-message-content');
-      const btnNewMessage = document.getElementById('new-message-btn');
-      const btnFile = document.getElementById('file-input');
-      const lblFile = document.getElementById('file-label');
-      const divStatus = document.getElementById('status');
+      // @ts-check
+
+      /**
+       * @param {string} id
+       * @return {HTMLElement}
+       */
+      const mustGetElementById = function (id) {
+        const el = document.getElementById(id);
+        if (!el) {
+          throw new Error(`No element found for ID ${id}`);
+        }
+        return el;
+      };
+
+      const divMessages = mustGetElementById('messages');
+      const formNewMessage = /** @type {HTMLFormElement} */ (mustGetElementById('new-message-form'));
+      const txtNewMessage = /** @type {HTMLTextAreaElement} */ (mustGetElementById('new-message-content'));
+      const btnNewMessage = /** @type {HTMLButtonElement} */ (mustGetElementById('new-message-btn'));
+      const btnFile = /** @type {HTMLInputElement} */ (mustGetElementById('file-input'));
+      const lblFile = mustGetElementById('file-label');
+      const divStatus = mustGetElementById('status');
 
       const urlRegex = /(https:\/\/\S+(?:\.|:)\S+)/gi;
 
@@ -196,7 +210,14 @@
       async function readAsBuffer(blob) {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result);
+          reader.onload = (e) => {
+            if (e.target && e.target.result && !(typeof e.target.result === 'string')) {
+              resolve(e.target.result);
+            } else {
+              console.error({ msg: 'FileReader result has unexpected non-ArrayBuffer type', ctx: e });
+              reject(new Error('FileReader result has unexpected non-ArrayBuffer type'));
+            }
+          }
           reader.onerror = (err) => reject(err);
           reader.readAsArrayBuffer(blob);
         });
@@ -208,14 +229,21 @@
       async function readAsB64(blob) {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+          reader.onload = (e) => {
+            if (e.target && (typeof e.target.result === 'string')) {
+              resolve(e.target.result.split(',')[1]);
+            } else {
+              console.error({ msg: 'FileReader result has unexpected non-string type', ctx: e });
+              reject(new Error('FileReader result has unexpected non-string type'));
+            }
+          };
           reader.onerror = (err) => reject(err);
           reader.readAsDataURL(blob);
         });
       }
       /**
-       * @param {string} text
-       * @returns {Blob}
+       * @param {string} base64
+       * @returns {Promise<Blob>}
        */
       async function base64ToBlob(base64) {
         const resp = await fetch('data:application/octet-stream;base64,' + base64);
@@ -223,7 +251,7 @@
       }
       /**
        * @param {Blob} blob
-       * @returns {Uint8Array}
+       * @returns {Promise<Uint8Array>}
        */
       async function blobToUint8Array(blob) {
         const arrayBuffer = await blob.arrayBuffer();
@@ -242,34 +270,32 @@
       /**
        * @param {string} text
        * @param {CreamyMessage} message
-       * @returns {string}
+       * @returns {Promise<string>}
        */
-      window.decodeMessageText = async function (text, message) {
+      let decodeMessageText = async function (text, message) {
         return text;
       };
       /**
        * @param {string} text
-       * @param {CreamyMessage} message
-       * @returns {string}
+       * @returns {Promise<string>}
        */
-      window.encodeMessageText = async function (text, message) {
+      let encodeMessageText = async function (text) {
         return text;
       };
 
       /**
        * @param {string} text
        * @param {CreamyMessage} message
-       * @returns {Blob}
+       * @returns {Promise<Blob>}
        */
-      window.decodeMessageBinary = async function (text, message) {
+      let decodeMessageBinary = async function (text, message) {
         return await base64ToBlob(text);
       };
       /**
        * @param {Blob} blob
-       * @param {CreamyMessage} message
-       * @returns {string}
+       * @returns {Promise<string>}
        */
-      window.encodeMessageBinary = async function (blob, message) {
+      let encodeMessageBinary = async function (blob) {
         return await readAsB64(blob);
       };
 
@@ -292,7 +318,7 @@
           return;
         }
 
-        window.decodeMessageText = async function (text, message) {
+        decodeMessageText = async function (text, message) {
           try {
             const result = await openpgp.decrypt({
               message: await openpgp.readMessage({
@@ -310,13 +336,13 @@
             return '(decoding failed)';
           }
         };
-        window.encodeMessageText = async function (text, message) {
+        encodeMessageText = async function (text) {
           return await openpgp.encrypt({
             message: await openpgp.createMessage({ text: text }),
             passwords: [key],
           });
         };
-        window.decodeMessageBinary = async function (text, message) {
+        decodeMessageBinary = async function (text, message) {
           const result = await openpgp.decrypt({
             message: await openpgp.readMessage({
               binaryMessage: await blobToUint8Array(await base64ToBlob(text)),
@@ -326,7 +352,7 @@
           });
           return new Blob([result.data]);
         };
-        window.encodeMessageBinary = async function (blob, message) {
+        encodeMessageBinary = async function (blob) {
           const enc = await openpgp.encrypt({
             message: await openpgp.createMessage({ binary: await blobToUint8Array(blob) }),
             passwords: [key],
@@ -380,7 +406,7 @@
 
         if (message && message.file && message.file.present) {
           const data = await blobToUint8Array(
-            await window.decodeMessageBinary(message.file.data_b64),
+            await decodeMessageBinary(message.file.data_b64, message),
           );
           /** @type {CreamyFileData} */
           const existing = files.get(message.file.client_uuid) || {
@@ -395,9 +421,9 @@
           files.set(message.file.client_uuid, existing);
           // perform these after updating map, otherwise can race
           if (existing.written === 0) {
-            existing.filename = await window.decodeMessageText(message.file.filename) || 'file.bin';
-            existing.mimetype = await window.decodeMessageText(message.file.mimetype) || 'application/octet-stream';
-            existing.hash_sha256 = await window.decodeMessageText(message.file.hash_sha256);
+            existing.filename = await decodeMessageText(message.file.filename, message) || 'file.bin';
+            existing.mimetype = await decodeMessageText(message.file.mimetype, message) || 'application/octet-stream';
+            existing.hash_sha256 = await decodeMessageText(message.file.hash_sha256, message);
           }
           existing.data.set(data, message.file.offset);
           existing.written += data.byteLength;
@@ -539,7 +565,7 @@
           const divMessageText = document.createElement('div');
           divMessageText.setAttribute('class', 'message__text');
 
-          const text = await window.decodeMessageText(message.text.text, message);
+          const text = await decodeMessageText(message.text.text, message);
           const parts = text.split(urlRegex);
           parts.forEach((part) => {
             if (part.startsWith('https://')) {
@@ -591,6 +617,10 @@
           signal: controller.signal,
         })
           .then((response) => {
+            if (!response.body) {
+              console.error({ msg: 'Response has no body', ctx: response });
+              throw new Error('Response has no body');
+            }
             const reader = response.body.getReader();
             let accum = '';
             return reader.read().then(function pump({ done, value }) {
@@ -646,7 +676,7 @@
 
       let pastedFiles = [];
       function updateFileBtnText() {
-        const filesLength = btnFile.files.length + pastedFiles.length;
+        const filesLength = (btnFile.files ? btnFile.files.length : 0) + pastedFiles.length;
         if (filesLength) {
           lblFile.innerText = 'Attach\n(' + filesLength + ')';
         } else {
@@ -667,13 +697,14 @@
 
         const rawText = txtNewMessage.value;
         const rawFiles = [
-          ...btnFile.files,
+          ...(btnFile.files || []),
           ...pastedFiles,
         ];
 
         try {
           if (rawText.length > 0) {
-            const text = await window.encodeMessageText(rawText);
+            // todo: this should immediately become a "pending" message, allow the user to continue messaging
+            const text = await encodeMessageText(rawText);
             const resp = await fetch('/send', {
               method: 'POST',
               headers: {
@@ -688,14 +719,15 @@
             }
           }
           if (rawFiles.length > 0) {
+            // todo: these should immediately become "pending" uploads, allow the user to continue messaging
             const chunkSize = 512 * 1024; // 512KB
             for (let i = 0; i < rawFiles.length; i += 1) {
               /** @type {File} */
               const file = rawFiles[i];
               const data = await readAsBuffer(rawFiles[i]);
-              const filename = await window.encodeMessageText(file.name || '');
-              const mimetype = await window.encodeMessageText(file.type);
-              const hash = await window.encodeMessageText(arrayBufferToHex(await crypto.subtle.digest('SHA-256', data)));
+              const filename = await encodeMessageText(file.name || '');
+              const mimetype = await encodeMessageText(file.type);
+              const hash = await encodeMessageText(arrayBufferToHex(await crypto.subtle.digest('SHA-256', data)));
               const clientUUID = '' + Date.now() + Math.random();
               for (let offset = 0; offset < file.size; offset += chunkSize) {
                 const chunk = new Blob([data.slice(offset, offset+chunkSize)]);
@@ -709,7 +741,7 @@
                     filename: filename,
                     mimetype: mimetype,
                     hash_sha256: hash,
-                    data_b64: await window.encodeMessageBinary(chunk),
+                    data_b64: await encodeMessageBinary(chunk),
                     total_size: file.size,
                     offset: offset,
                   }),
@@ -740,6 +772,9 @@
           sendMessage();
         }
       });
+      /**
+       * @param {DataTransfer} dataTransfer
+       */
       function loadDataTransferFiles(dataTransfer) {
         if (dataTransfer.items) {
           [...dataTransfer.items].forEach((item) => {
@@ -750,20 +785,24 @@
         } else {
           pastedFiles = [
             ...pastedFiles,
-            ...e.clipboardData.files,
+            ...dataTransfer.files,
           ];
         }
         updateFileBtnText();
       }
       document.addEventListener('paste', (e) => {
-        loadDataTransferFiles(e.clipboardData);
+        if (e.clipboardData) {
+          loadDataTransferFiles(e.clipboardData);
+        }
       });
       document.addEventListener('dragover', (e) => {
         e.preventDefault();
       });
       document.addEventListener('drop', (e) => {
         e.preventDefault();
-        loadDataTransferFiles(e.dataTransfer);
+        if (e.dataTransfer) {
+          loadDataTransferFiles(e.dataTransfer);
+        }
       });
 
       receiveLoop();
