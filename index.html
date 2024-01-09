@@ -545,7 +545,7 @@
             if (part.startsWith('https://')) {
               const link = document.createElement('a');
               link.innerText = part;
-              link.setAttribute('href', link);
+              link.setAttribute('href', part);
               link.setAttribute('target', '_blank');
               link.setAttribute('class', 'link');
               link.setAttribute('rel', 'noreferrer');
