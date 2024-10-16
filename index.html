@@ -299,6 +299,9 @@
         return await readAsB64(blob);
       };
 
+      window.addEventListener('hashchange', function () {
+        window.location.reload();
+      });
       function loadFixedKey() {
         // key="#f-foobar" or "f-foobar"
         let key = window.location.hash;
