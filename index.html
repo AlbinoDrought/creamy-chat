@@ -5,13 +5,16 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-      html, body {
+      html, body, dialog {
         background-color: rgb(27, 27, 27);
         color: rgb(171, 171, 171);
+      }
+      html, body {
         height: 100vh;
         height: 100svh;
         padding: 0;
         margin: 0;
+        font-family: sans-serif;
       }
       textarea {
         background-color: rgb(27, 27, 27);
@@ -28,6 +31,10 @@
         overflow-y: auto;
         height: 100%;
         padding: 1em;
+      }
+      .gapped {
+        display: flex;
+        gap: 1em;
       }
       .btn {
         border: none;
@@ -120,9 +127,36 @@
         background-color: red;
         color: red;
       }
+
+      dialog::backdrop {
+        background: repeating-linear-gradient(
+          45deg,
+          rgba(0, 0, 0, 0.2),
+          rgba(0, 0, 0, 0.2) 1px,
+          rgba(0, 0, 0, 0.4) 1px,
+          rgba(0, 0, 0, 0.4) 20px
+        );
+      }
     </style>
   </head>
   <body>
+    <dialog id="use-random-key-dialog">
+      <form method="dialog">
+        <p>
+          You're currently chatting in plaintext mode.<br>
+          All data will be sent to the server in plaintext and broadcast
+          to all other chatters in plaintext.<br>
+          To continue in this mode, press "Ignore".<br>
+          To restart with a random key, press "Use Random Key".<br>
+          To restart with a chosen key, press "Use Chosen Key".
+        </p>
+        <div class="gapped">
+          <button class="btn" value="ignore">Ignore</button>
+          <button class="btn" value="random">Use Random Key</button>
+          <button class="btn" value="chosen">Use Chosen Key</button>
+        </div>
+      </form>
+    </dialog>
     <div id="view">
       <div id="messages">
       </div>
@@ -159,6 +193,7 @@
       const btnFile = /** @type {HTMLInputElement} */ (mustGetElementById('file-input'));
       const lblFile = mustGetElementById('file-label');
       const divStatus = mustGetElementById('status');
+      const modalUseRandomKey = /** @type {HTMLDialogElement} */ mustGetElementById('use-random-key-dialog');
 
       const urlRegex = /(https:\/\/\S+(?:\.|:)\S+)/gi;
 
@@ -299,6 +334,62 @@
         return await readAsB64(blob);
       };
 
+      /**
+       * @param {string} hex
+       * @returns {Uint8Array}
+       */
+      function hexDecode(hex) {
+        if ((hex.length % 2) !== 0) {
+          throw new Error('Can only decode hex of even length!');
+        }
+        const buf = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < buf.byteLength; i += 1) {
+          buf[i] = parseInt(hex[i*2] + hex[(i*2)+1], 16);
+        }
+        return buf;
+      }
+      /**
+       * @param {Uint8Array} buf
+       * @returns {string}
+       */
+      function hexEncode(buf) {
+        let hex = '';
+        for (let i = 0; i < buf.byteLength; i += 1) {
+          hex += buf[i].toString(16).padStart(2, '0');
+        }
+        return hex;
+      }
+      /**
+       * @param {Uint8Array} buf
+       * @returns {string}
+       */
+      function byteString(buf) {
+        let bstr = '';
+        for (let i = 0; i < buf.byteLength; i += 1) {
+          bstr += String.fromCharCode(buf[i]);
+        }
+        return bstr;
+      }
+
+      // sanity check:
+      (function () {
+        const buf = new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF]);
+        const a = hexEncode(buf);
+        if (a !== 'deadbeef00ff') {
+          throw new Error(`Hex assertion 1 failed, expected deadbeef00ff but got ${a}`);
+        }
+        const b = hexDecode(a);
+        for (let i = 0; i < buf.byteLength; i += 1) {
+          if (b[i] !== buf[i]) {
+            throw new Error(`Hex assertion 2 failed at ${i}: expected ${buf} but got ${b}`);
+          }
+        }
+        const c = byteString(b);
+        if (c !== '\xDE\xAD\xBE\xEF\x00\xFF') {
+          throw new Error(`Hex assertion 3 failed`);
+        }
+      }());
+
       window.addEventListener('hashchange', function () {
         window.location.reload();
       });
@@ -306,19 +397,30 @@
         // key="#f-foobar" or "f-foobar"
         let key = window.location.hash;
         if (!key) {
-          return;
+          return false;
         }
         if (key[0] === '#') {
           // key="f-foobar"
           key = key.slice(1);
         }
-        if (!key.startsWith('f-')) {
-          return;
+        if (key.startsWith('fh-')) {
+          // key="deadbeef00ff"
+          key = key.slice(3);
+          try {
+            const bufKey = hexDecode(key);
+            key = byteString(bufKey);
+          } catch (ex) {
+            console.error('Failed to load fh key:', ex);
+            return false;
+          }
+        } else if (key.startsWith('f-')) {
+          // key="foobar"
+          key = key.slice(2);
+        } else {
+          return false;
         }
-        // key="foobar"
-        key = key.slice(2);
         if (!key) {
-          return;
+          return false;
         }
 
         decodeMessageText = async function (text, message) {
@@ -365,8 +467,56 @@
         };
         btnNewMessage.innerText += '\n(PGP-FK)';
         console.log('enabled fixed-key mode');
+        return true;
       }
-      loadFixedKey();
+      
+      if (!loadFixedKey()) {
+        btnNewMessage.innerText += '\n(Plaintext)';
+        if (!(window.location.hash || '').includes('plain')) {
+          try {
+            modalUseRandomKey.showModal();
+            modalUseRandomKey.addEventListener('close', async function (e) {
+              const reloadWithKey = function (key, mode = 'f') {
+                window.location.hash = `${mode}-${key}`;
+                window.location.reload();
+              };
+
+              /** @type {HTMLDialogElement} */
+              if (modalUseRandomKey.returnValue === 'random') {
+                const keySize = 2048;
+                let randBuffer;
+                try {
+                  const key = await crypto.subtle.generateKey(
+                    {
+                      name: 'RSA-OAEP',
+                      modulusLength: keySize,
+                      publicExponent: new Uint8Array([1, 0, 1]),
+                      hash: 'SHA-256',
+                    },
+                    true,
+                    ['encrypt', 'decrypt'],
+                  );
+                  const exported = await crypto.subtle.exportKey('raw', key);
+                  randBuffer = new Uint8Array(exported);
+                } catch (ex) {
+                  console.error('Failed to subtle.generateKey, using fallback:', ex);
+                  randBuffer = new Uint8Array(keySize/8);
+                  crypto.getRandomValues(randBuffer);
+                }
+                reloadWithKey(hexEncode(randBuffer), 'fh');
+              } else if (modalUseRandomKey.returnValue === 'chosen') {
+                reloadWithKey(prompt('Please enter chosen key:'));
+              } else if (modalUseRandomKey.returnValue === 'ignore') {
+                reloadWithKey('text', 'plain');
+              } else {
+                throw new Error(`Unknown modalUseRandomKey return value ${modalUseRandomKey.returnValue}`);
+              }
+            })
+          } catch (ex) {
+            console.error('Failed to show modalUseRandomKey, ignoring', ex);
+          }
+        }
+      }
 
       const files = new Map();
 
